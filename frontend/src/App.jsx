@@ -29,27 +29,25 @@ function App() {
   }
 
   return (
-              <div className="relative min-h-screen bg-gray-50 bg-pink-100">
+    <div className="relative min-h-screen bg-gray-50 bg-pink-100">
 
-    <BrowserRouter>
-      <Navbar />
+      <BrowserRouter>
+        <Navbar />
 
-      <Routes>
-        <Route path="/" element={<ClientDashBoard />} />
-        <Route path="/home" element={<ClientDashBoard />} />
-        <Route path="/cart" element={<ClientCartPage />} />
-  <Route path="/offers" element={<ClientDashBoard showOffers={true} />} />
-        <Route path="/contact" element={<ClientContactPage />} />
-        <Route path="/signin" element={<SignIn />} />
-        <Route path="/signup" element={<SignUp />} />
-  <Route path="/menu" element={<ClientFoodItemsPage />} />
-  <Route path="/testimonials" element={<ClientDashBoard showTestimonials={true} />} />
-        <Route path="/faq" element={<ClientFAQPage />} />
-  <Route path="/privacy" element={<ClientPrivacyPolicyPage />} />
-        <Route path="/terms" element={<ClientTermsAndConditionsPage />} />
-        <Route path="/help" element={<ClientHelpCenterPage />} />
-
-
+        <Routes>
+          <Route path="/" element={<ClientDashBoard />} />
+          <Route path="/home" element={<ClientDashBoard />} />
+          <Route path="/cart" element={<ClientCartPage />} />
+          <Route path="/offers" element={<ClientDashBoard showOffers={true} />} />
+          <Route path="/contact" element={<ClientContactPage />} />
+          <Route path="/signin" element={<SignIn />} />
+          <Route path="/signup" element={<SignUp />} />
+          <Route path="/menu" element={<ClientFoodItemsPage />} />
+          <Route path="/testimonials" element={<ClientDashBoard showTestimonials={true} />} />
+          <Route path="/faq" element={<ClientFAQPage />} />
+          <Route path="/privacy" element={<ClientPrivacyPolicyPage />} />
+          <Route path="/terms" element={<ClientTermsAndConditionsPage />} />
+          <Route path="/help" element={<ClientHelpCenterPage />} />
 
 
 
@@ -63,11 +61,13 @@ function App() {
 
 
 
-      </Routes>
-  <Footer />
 
-    </BrowserRouter>
-              </div>
+
+        </Routes>
+        <Footer />
+
+      </BrowserRouter>
+    </div>
   );
 }
 
