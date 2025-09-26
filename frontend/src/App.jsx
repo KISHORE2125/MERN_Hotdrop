@@ -1,6 +1,6 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import LoadingScreen from "./LoadingScreen/Components/LoadingScreen";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
 import Navbar from "./Client_Site/Navbar/Components/Navbar";
 import ClientDashBoard from "./Client_Site/Pages/ClientDashBoard";
 import ClientCartPage from "./Client_Site/Pages/ClientCartPage";
@@ -19,6 +19,43 @@ import Footer from "./Client_Site/Footer/Components/Footer";
 function App() {
   const [loadingFinished, setLoadingFinished] = useState(false);
 
+  // A small component inside the Router so useLocation works.
+  const ScrollToTopAndHash = () => {
+    const location = useLocation();
+
+    useEffect(() => {
+      // Immediately jump to top on route change
+      window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+
+      // Determine id to scroll to: prefer hash, otherwise map certain paths
+      let id = null;
+      if (location && location.hash) {
+        id = location.hash.replace("#", "");
+      } else if (location.pathname === "/offers") {
+        id = "offers";
+      } else if (location.pathname === "/testimonials") {
+        id = "testimonials";
+      }
+
+      if (id) {
+        // wait a short moment for the target component to mount/layout
+        const t = setTimeout(() => {
+          const el = document.getElementById(id);
+          if (!el) return;
+          const nav = document.querySelector("nav");
+          const navHeight = nav ? nav.offsetHeight : 80;
+          const rect = el.getBoundingClientRect();
+          const top = rect.top + window.pageYOffset - navHeight - 24;
+          window.scrollTo({ top, behavior: "smooth" });
+        }, 90);
+        return () => clearTimeout(t);
+      }
+      return undefined;
+    }, [location.pathname, location.hash]);
+
+    return null;
+  };
+
   if (!loadingFinished) {
     return (
       <LoadingScreen
@@ -33,6 +70,7 @@ function App() {
 
       <BrowserRouter>
         <Navbar />
+        <ScrollToTopAndHash />
 
         <Routes>
           <Route path="/" element={<ClientDashBoard />} />
@@ -48,21 +86,6 @@ function App() {
           <Route path="/privacy" element={<ClientPrivacyPolicyPage />} />
           <Route path="/terms" element={<ClientTermsAndConditionsPage />} />
           <Route path="/help" element={<ClientHelpCenterPage />} />
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
         </Routes>
         <Footer />
 
