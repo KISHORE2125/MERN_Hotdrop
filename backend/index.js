@@ -11,7 +11,10 @@ import passport from 'passport';
 import { Strategy as GoogleStrategy } from 'passport-google-oauth20';
 import rateLimit from 'express-rate-limit';
 import csurf from 'csurf';
+import nodemailer from 'nodemailer';
 import User from './models/User.js';
+// Temporary in-memory pending signup store: email -> { name, password, otp, otpExpires }
+const pendingMap = new Map();
 
 // Load .env in backend folder
 dotenv.config({ path: path.resolve(process.cwd(), '.env') });
@@ -183,31 +186,160 @@ app.post('/api/signup', async (req, res) => {
 		if (!/^[^@\s]+@gmail\.com$/i.test(emailValue)) {
 			return res.status(400).json({ message: 'Only Gmail addresses are allowed.' });
 		}
-		await connectMongo();
-		// Prevent duplicate emails
-		const existing = await User.findOne({ email }).exec();
-		if (existing) return res.status(409).json({ message: 'Email already Exist.' });
+	await connectMongo();
+	// Prevent duplicate emails in users
+	const existing = await User.findOne({ email }).exec();
+	if (existing) return res.status(409).json({ message: 'Email already Exist.' });
 
-		const user = new User({ name, email, password, provider: 'local' });
-		await user.save();
+	// create an in-memory pending record (do NOT store user in DB until verified)
+	// generate 6 digit numeric OTP
+	const otp = Math.floor(100000 + Math.random() * 900000).toString();
+	const otpExpires = new Date(Date.now() + 1000 * 60 * 15); // 15 minutes
+	pendingMap.set(emailValue, { name, password, otp, otpExpires });
 
-		// Login the user (establish session)
-		// Establish session manually to avoid calling passport's req.login (which may attempt session.regenerate)
-		if (!req.session) {
-			return res.status(500).json({ message: 'Session not available' });
-		}
-		req.session.passport = { user: String(user._id) };
-		req.session.save((err) => {
-			if (err) {
-				console.error('Failed to save session after signup:', err);
-				return res.status(500).json({ message: 'Signup succeeded but session save failed.' });
+		// send OTP via nodemailer if SMTP configured, otherwise console.log
+		const smtpHost = process.env.SMTP_HOST;
+		const smtpPort = process.env.SMTP_PORT;
+		const smtpUser = process.env.SMTP_USER;
+		const smtpPass = process.env.SMTP_PASS;
+
+		let sentVia = 'console';
+		let sendError = null;
+		try {
+			if (smtpHost && smtpPort && smtpUser && smtpPass) {
+				const smtpDebug = process.env.SMTP_DEBUG === '1';
+				const transporter = nodemailer.createTransport({
+					host: smtpHost,
+					port: Number(smtpPort),
+					secure: Number(smtpPort) === 465, // true for 465, false for other ports
+					auth: { user: smtpUser, pass: smtpPass },
+					logger: smtpDebug,
+					debug: smtpDebug
+				});
+
+				// If debug enabled, verify connection early to surface obvious auth/connect errors
+				if (smtpDebug) {
+					try {
+						await transporter.verify();
+						console.log('SMTP verify: connection successful');
+					} catch (vErr) {
+						console.error('SMTP verify failed:', vErr && vErr.message ? vErr.message : vErr);
+					}
+				}
+
+				const info = await transporter.sendMail({
+					from: process.env.SMTP_FROM || smtpUser,
+					to: emailValue,
+					subject: 'Your verification code',
+					text: `Your verification code is ${otp}. It expires in 15 minutes.`,
+				});
+				console.log('nodemailer sendMail result for', emailValue, info && info.messageId ? info.messageId : info);
+				sentVia = `smtp:${info.messageId || 'sent'}`;
+			} else {
+				console.log(`OTP for ${emailValue}: ${otp} (expires ${otpExpires})`);
 			}
-			const safe = { _id: user._id, name: user.name, email: user.email, provider: user.provider, avatar: user.avatar };
-			return res.status(201).json({ message: 'Signup successful', user: safe });
-		});
+				} catch (err) {
+					sendError = err && err.message ? err.message : String(err);
+					console.error('Failed to send OTP email for', emailValue, err);
+					console.log(`Fallback OTP for ${emailValue}: ${otp}`);
+				}
+
+		// Build response. In dev or when explicitly allowed, include the otp for easier testing.
+		const resp = { message: 'Signup successful. Verification OTP sent.', sentVia };
+		if (process.env.SHOW_OTP_IN_RESPONSE === '1') {
+			resp.otp = otp;
+		}
+
+		if (process.env.SMTP_DEBUG === '1' && sendError) {
+			resp.smtpError = sendError;
+		}
+
+		return res.status(201).json(resp);
 	} catch (err) {
 		console.error('Signup error:', err);
 		return res.status(500).json({ message: 'Server error during signup' });
+	}
+});
+
+// Debug send endpoint - attempt to send an arbitrary message via configured SMTP and return details
+app.post('/api/debug-send', async (req, res) => {
+	try {
+		const { to, subject, text } = req.body || {};
+		if (!to) return res.status(400).json({ message: 'to (email) is required' });
+		const smtpHost = process.env.SMTP_HOST;
+		const smtpPort = process.env.SMTP_PORT;
+		const smtpUser = process.env.SMTP_USER;
+		const smtpPass = process.env.SMTP_PASS;
+		if (!smtpHost || !smtpPort || !smtpUser || !smtpPass) {
+			return res.status(400).json({ message: 'SMTP not configured in env vars' });
+		}
+
+		const smtpDebug = process.env.SMTP_DEBUG === '1';
+		const transporter = nodemailer.createTransport({
+			host: smtpHost,
+			port: Number(smtpPort),
+			secure: Number(smtpPort) === 465,
+			auth: { user: smtpUser, pass: smtpPass },
+			logger: smtpDebug,
+			debug: smtpDebug
+		});
+
+		if (smtpDebug) {
+			try {
+				await transporter.verify();
+			} catch (vErr) {
+				return res.status(500).json({ message: 'SMTP verify failed', error: vErr && vErr.message ? vErr.message : String(vErr) });
+			}
+		}
+
+		try {
+			const info = await transporter.sendMail({
+				from: process.env.SMTP_FROM || smtpUser,
+				to,
+				subject: subject || 'Debug email',
+				text: text || 'Test email from backend'
+			});
+			return res.json({ ok: true, info: info && info.messageId ? info.messageId : info });
+		} catch (sendErr) {
+			return res.status(500).json({ message: 'sendMail failed', error: sendErr && sendErr.message ? sendErr.message : String(sendErr) });
+		}
+	} catch (err) {
+		console.error('Debug send error:', err);
+		return res.status(500).json({ message: 'Server error during debug-send' });
+	}
+});
+
+// Verify OTP endpoint - accepts email and otp, marks user verified and establishes session
+app.post('/api/verify-otp', async (req, res) => {
+	try {
+		const { email, otp } = req.body || {};
+		if (!email || !otp) return res.status(400).json({ message: 'Email and otp are required.' });
+		const emailValue = (email || '').trim().toLowerCase();
+		await connectMongo();
+		const pending = pendingMap.get(emailValue);
+		if (!pending) return res.status(400).json({ message: 'No pending verification found for this email.' });
+		if (!pending.otp || !pending.otpExpires) return res.status(400).json({ message: 'No OTP found. Request a new one.' });
+		if (pending.otp !== String(otp).trim()) return res.status(400).json({ message: 'Invalid OTP' });
+		if (pending.otpExpires < new Date()) return res.status(400).json({ message: 'OTP expired' });
+
+		// Create real user in DB (password will be hashed by User model pre-save middleware)
+		const user = new User({ name: pending.name, email: emailValue, password: pending.password, provider: 'local', isVerified: true });
+		await user.save();
+		pendingMap.delete(emailValue);
+
+		if (!req.session) return res.status(500).json({ message: 'Session not available' });
+		req.session.passport = { user: String(user._id) };
+		req.session.save((err) => {
+			if (err) {
+				console.error('Failed to save session after OTP verify:', err);
+				return res.status(500).json({ message: 'Verification succeeded but session save failed.' });
+			}
+			const safe = { _id: user._id, name: user.name, email: user.email, provider: user.provider, avatar: user.avatar };
+			return res.json({ message: 'Verification successful', user: safe });
+		});
+	} catch (err) {
+		console.error('Verify OTP error:', err);
+		return res.status(500).json({ message: 'Server error during OTP verification' });
 	}
 });
 
@@ -229,6 +361,11 @@ app.post('/api/signin', async (req, res) => {
 
 		const ok = await user.comparePassword(password);
 		if (!ok) return res.status(401).json({ message: 'Invalid credentials or Password' });
+
+		// require verified email for local provider
+		if (user.provider === 'local' && !user.isVerified) {
+			return res.status(403).json({ message: 'Email not verified. Please verify using the OTP sent to your email.' });
+		}
 
 		// Login establishes a session
 		// Establish session manually to avoid calling passport's req.login

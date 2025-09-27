@@ -8,6 +8,10 @@ const userSchema = new mongoose.Schema({
 	provider: { type: String, default: 'local' },
 	providerId: { type: String, index: true },
 	avatar: { type: String },
+    // OTP / verification fields
+    isVerified: { type: Boolean, default: false },
+    otp: { type: String },
+    otpExpires: { type: Date },
 }, { timestamps: true });
 
 userSchema.pre('save', async function (next) {

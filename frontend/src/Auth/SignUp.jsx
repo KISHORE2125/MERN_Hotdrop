@@ -14,6 +14,12 @@ const SignUp = () => {
   const [googleLoading, setGoogleLoading] = useState(false);
   const [error, setError] = useState("");
   const [emailError, setEmailError] = useState("");
+  const [showVerify, setShowVerify] = useState(false);
+  const [otp, setOtp] = useState('');
+  const [verifyLoading, setVerifyLoading] = useState(false);
+  const [resendLoading, setResendLoading] = useState(false);
+  const [signupEmail, setSignupEmail] = useState('');
+  const [debugOtp, setDebugOtp] = useState('');
 
   const handleChange = (e) => {
     const next = { ...formData, [e.target.name]: e.target.value };
@@ -50,9 +56,11 @@ const SignUp = () => {
           setLoading(false);
           return;
         }
-        // Success: you may redirect to dashboard or show success
-        setLoading(false);
-        window.location.href = '/';
+  // Success: show verify UI (OTP sent)
+  setLoading(false);
+  setSignupEmail(formData.email);
+  if (data && data.otp) setDebugOtp(data.otp);
+  setShowVerify(true);
       } catch (err) {
         console.error('Signup request error', err);
         setError('Network error. Please try again.');
@@ -97,7 +105,8 @@ const SignUp = () => {
 
         {error && <p className="text-red-500 text-center text-sm mt-2">{error}</p>}
 
-        <form className="mt-6 space-y-4" onSubmit={handleSubmit}>
+  {!showVerify ? (
+  <form className="mt-6 space-y-4" onSubmit={handleSubmit}>
           {/* Name */}
           <div className="relative">
             <FiUser className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500 text-lg" />
@@ -179,6 +188,92 @@ const SignUp = () => {
             {loading ? "Signing Up..." : "Sign Up"} <FiArrowRight />
           </motion.button>
         </form>
+        ) : (
+          <div className="mt-6 space-y-4">
+            <p className="text-sm text-gray-600">We've sent a 6-digit verification code to <strong>{signupEmail}</strong>. Enter it below to verify your account.</p>
+            {debugOtp && (
+              <p className="text-xs text-gray-500 mt-1">Debug OTP: <strong className="text-red-600">{debugOtp}</strong></p>
+            )}
+            <div className="relative">
+              <input
+                type="text"
+                name="otp"
+                placeholder="Enter OTP"
+                value={otp}
+                onChange={(e) => setOtp(e.target.value)}
+                className="w-full pl-3 pr-3 py-2.5 rounded-lg border border-gray-300 focus:outline-none text-sm"
+              />
+            </div>
+
+            {error && <p className="text-red-500 text-center text-sm">{error}</p>}
+
+            <div className="flex gap-2">
+              <button
+                onClick={async () => {
+                  setVerifyLoading(true);
+                  setError('');
+                  try {
+                    const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:5001';
+                    const res = await fetch(`${apiBase}/api/verify-otp`, {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      credentials: 'include',
+                      body: JSON.stringify({ email: signupEmail, otp: otp })
+                    });
+                    const data = await res.json();
+                    if (!res.ok) {
+                      setError(data && data.message ? data.message : 'Verification failed');
+                      setVerifyLoading(false);
+                      return;
+                    }
+                    // verified and session established; redirect to home
+                    window.location.href = '/';
+                  } catch (err) {
+                    console.error('Verify request error', err);
+                    setError('Network error. Please try again.');
+                    setVerifyLoading(false);
+                  }
+                }}
+                className="flex-1 px-4 py-2.5 rounded-lg bg-red-500 text-white font-semibold disabled:opacity-50"
+                disabled={verifyLoading}
+              >
+                {verifyLoading ? 'Verifying...' : 'Verify OTP'}
+              </button>
+
+              <button
+                onClick={async () => {
+                  setResendLoading(true);
+                  setError('');
+                  try {
+                    const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:5001';
+                    // simple resend by calling signup again with same data (backend overwrites OTP)
+                    const res = await fetch(`${apiBase}/api/signup`, {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      credentials: 'include',
+                      body: JSON.stringify({ name: formData.name, email: signupEmail, password: formData.password })
+                    });
+                    const data = await res.json();
+                    if (!res.ok) {
+                      setError(data && data.message ? data.message : 'Resend failed');
+                      setResendLoading(false);
+                      return;
+                    }
+                    setResendLoading(false);
+                  } catch (err) {
+                    console.error('Resend error', err);
+                    setError('Network error. Please try again.');
+                    setResendLoading(false);
+                  }
+                }}
+                className="px-4 py-2.5 rounded-lg bg-white border border-gray-300 text-gray-700 font-semibold"
+                disabled={resendLoading}
+              >
+                {resendLoading ? 'Resending...' : 'Resend OTP'}
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Google Sign-In */}
         <motion.button
