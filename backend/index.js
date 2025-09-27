@@ -192,12 +192,16 @@ app.post('/api/signup', async (req, res) => {
 		await user.save();
 
 		// Login the user (establish session)
-		req.login(user, (err) => {
+		// Establish session manually to avoid calling passport's req.login (which may attempt session.regenerate)
+		if (!req.session) {
+			return res.status(500).json({ message: 'Session not available' });
+		}
+		req.session.passport = { user: String(user._id) };
+		req.session.save((err) => {
 			if (err) {
-				console.error('Login after signup failed:', err);
-				return res.status(500).json({ message: 'Signup succeeded but login failed.' });
+				console.error('Failed to save session after signup:', err);
+				return res.status(500).json({ message: 'Signup succeeded but session save failed.' });
 			}
-			// Send back minimal user info
 			const safe = { _id: user._id, name: user.name, email: user.email, provider: user.provider, avatar: user.avatar };
 			return res.status(201).json({ message: 'Signup successful', user: safe });
 		});
@@ -227,10 +231,15 @@ app.post('/api/signin', async (req, res) => {
 		if (!ok) return res.status(401).json({ message: 'Invalid credentials or Password' });
 
 		// Login establishes a session
-		req.login(user, (err) => {
+		// Establish session manually to avoid calling passport's req.login
+		if (!req.session) {
+			return res.status(500).json({ message: 'Session not available' });
+		}
+		req.session.passport = { user: String(user._id) };
+		req.session.save((err) => {
 			if (err) {
-				console.error('Login failed:', err);
-				return res.status(500).json({ message: 'Failed to login after authentication.' });
+				console.error('Failed to save session after signin:', err);
+				return res.status(500).json({ message: 'Signin succeeded but session save failed.' });
 			}
 			const safe = { _id: user._id, name: user.name, email: user.email, provider: user.provider, avatar: user.avatar };
 			return res.json({ message: 'Signin successful', user: safe });
@@ -238,6 +247,35 @@ app.post('/api/signin', async (req, res) => {
 	} catch (err) {
 		console.error('Signin error:', err);
 		return res.status(500).json({ message: 'Server error during signin' });
+	}
+});
+
+// Logout endpoint - destroys session and clears cookie
+app.post('/api/logout', (req, res) => {
+	try {
+		// Avoid calling passport's req.logout which may attempt session.regenerate
+		const cookieOptions = {
+			path: '/',
+			httpOnly: true,
+			secure: process.env.NODE_ENV === 'production',
+			sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+		};
+
+		if (req.session) {
+			req.session.destroy((err) => {
+				if (err) {
+					console.error('Session destroy error:', err);
+				}
+				res.clearCookie('connect.sid', cookieOptions);
+				return res.json({ message: 'Logged out' });
+			});
+		} else {
+			res.clearCookie('connect.sid', cookieOptions);
+			return res.json({ message: 'Logged out' });
+		}
+	} catch (err) {
+		console.error('Logout error:', err);
+		return res.status(500).json({ message: 'Server error during logout' });
 	}
 });
 

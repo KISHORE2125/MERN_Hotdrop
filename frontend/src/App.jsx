@@ -17,7 +17,14 @@ import ClientHelpCenterPage from "./Client_Site/Pages/ClientHelpCenterPage";
 import Footer from "./Client_Site/Footer/Components/Footer";
 
 function App() {
-  const [loadingFinished, setLoadingFinished] = useState(false);
+  // Show the loading splash only once per browser session
+  const [loadingFinished, setLoadingFinished] = useState(() => {
+    try {
+      return sessionStorage.getItem('hotdrop_splash_shown') === '1';
+    } catch (e) {
+      return false;
+    }
+  });
 
   // A small component inside the Router so useLocation works.
   const ScrollToTopAndHash = () => {
@@ -60,7 +67,12 @@ function App() {
     return (
       <LoadingScreen
         duration={3000}
-        onFinish={() => setLoadingFinished(true)}
+        onFinish={() => {
+          try {
+            sessionStorage.setItem('hotdrop_splash_shown', '1');
+          } catch (e) {}
+          setLoadingFinished(true);
+        }}
       />
     );
   }
