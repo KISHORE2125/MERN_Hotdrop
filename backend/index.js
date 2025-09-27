@@ -105,6 +105,10 @@ if (GOOGLE_CLIENT_ID && GOOGLE_CLIENT_SECRET) {
 			// Ensure DB ready before persisting
 			await connectMongo();
 			const email = profile.emails && profile.emails[0] && profile.emails[0].value;
+			// Enforce gmail-only for Google signins
+			if (email && !/^[^@\s]+@gmail\.com$/i.test(String(email).trim().toLowerCase())) {
+				return done(null, false, { message: 'Only Gmail accounts are allowed.' });
+			}
 			const providerId = profile.id;
 
 			// Find existing user by providerId first, then by email (to link accounts)
@@ -165,6 +169,77 @@ app.use('/api/', authLimiter);
 
 // Minimal health endpoint
 app.get('/health', (req, res) => res.json({ ok: true }));
+
+// Signup endpoint - creates a local user and starts a session
+app.post('/api/signup', async (req, res) => {
+	try {
+		const { name, email, password } = req.body || {};
+		if (!name || !email || !password) {
+			return res.status(400).json({ message: 'Name, email and password are required.' });
+		}
+
+		// Strictly require Gmail addresses
+		const emailValue = (email || '').trim().toLowerCase();
+		if (!/^[^@\s]+@gmail\.com$/i.test(emailValue)) {
+			return res.status(400).json({ message: 'Only Gmail addresses are allowed.' });
+		}
+		await connectMongo();
+		// Prevent duplicate emails
+		const existing = await User.findOne({ email }).exec();
+		if (existing) return res.status(409).json({ message: 'Email already Exist.' });
+
+		const user = new User({ name, email, password, provider: 'local' });
+		await user.save();
+
+		// Login the user (establish session)
+		req.login(user, (err) => {
+			if (err) {
+				console.error('Login after signup failed:', err);
+				return res.status(500).json({ message: 'Signup succeeded but login failed.' });
+			}
+			// Send back minimal user info
+			const safe = { _id: user._id, name: user.name, email: user.email, provider: user.provider, avatar: user.avatar };
+			return res.status(201).json({ message: 'Signup successful', user: safe });
+		});
+	} catch (err) {
+		console.error('Signup error:', err);
+		return res.status(500).json({ message: 'Server error during signup' });
+	}
+});
+
+// Signin endpoint - verifies credentials and starts a session
+app.post('/api/signin', async (req, res) => {
+	try {
+		const { email, password } = req.body || {};
+		if (!email || !password) return res.status(400).json({ message: 'Email and password are required.' });
+
+		// Enforce gmail-only addresses
+		const emailValue = (email || '').trim().toLowerCase();
+		if (!/^[^@\s]+@gmail\.com$/i.test(emailValue)) {
+			return res.status(400).json({ message: 'Only Gmail addresses are allowed.' });
+		}
+
+		await connectMongo();
+		const user = await User.findOne({ email: emailValue }).exec();
+		if (!user) return res.status(401).json({ message: 'Invalid credentials or Password' });
+
+		const ok = await user.comparePassword(password);
+		if (!ok) return res.status(401).json({ message: 'Invalid credentials or Password' });
+
+		// Login establishes a session
+		req.login(user, (err) => {
+			if (err) {
+				console.error('Login failed:', err);
+				return res.status(500).json({ message: 'Failed to login after authentication.' });
+			}
+			const safe = { _id: user._id, name: user.name, email: user.email, provider: user.provider, avatar: user.avatar };
+			return res.json({ message: 'Signin successful', user: safe });
+		});
+	} catch (err) {
+		console.error('Signin error:', err);
+		return res.status(500).json({ message: 'Server error during signin' });
+	}
+});
 
 // Start server — if MONGO_URI available and Google configured, attempt connection at startup for reliability
 async function start() {

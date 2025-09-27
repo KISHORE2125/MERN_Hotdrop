@@ -13,9 +13,16 @@ const SignUp = () => {
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const [error, setError] = useState("");
+  const [emailError, setEmailError] = useState("");
 
   const handleChange = (e) => {
-    setFormData({ ...formData, [e.target.name]: e.target.value });
+    const next = { ...formData, [e.target.name]: e.target.value };
+    setFormData(next);
+    if (e.target.name === 'email') {
+      const v = (e.target.value || '').trim().toLowerCase();
+      const isGmail = /^[^@\s]+@gmail\.com$/i.test(v);
+      setEmailError(v === '' || isGmail ? '' : 'Please use a Gmail address (example@gmail.com)');
+    }
   };
 
   const handleSubmit = (e) => {
@@ -28,8 +35,30 @@ const SignUp = () => {
     }
 
     setLoading(true);
-    // Simulate signup
-    setTimeout(() => setLoading(false), 1500);
+    (async () => {
+      try {
+        const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:5001';
+        const res = await fetch(`${apiBase}/api/signup`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ name: formData.name, email: formData.email, password: formData.password })
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          setError(data && data.message ? data.message : 'Signup failed');
+          setLoading(false);
+          return;
+        }
+        // Success: you may redirect to dashboard or show success
+        setLoading(false);
+        window.location.href = '/';
+      } catch (err) {
+        console.error('Signup request error', err);
+        setError('Network error. Please try again.');
+        setLoading(false);
+      }
+    })();
   };
 
   const handleGoogleSignIn = () => {
@@ -96,10 +125,14 @@ const SignUp = () => {
               onChange={handleChange}
               variants={typingVariants}
               animate={formData.email ? "typing" : "idle"}
-              className="w-full pl-10 pr-3 py-2.5 rounded-lg border border-gray-300 focus:outline-none text-sm"
+              className={`w-full pl-10 pr-3 py-2.5 rounded-lg focus:outline-none text-sm ${emailError ? 'border border-red-500' : 'border border-gray-300'}`}
               required
             />
           </div>
+
+          {emailError && (
+            <p className="text-red-500 text-xs mt-1">{emailError}</p>
+          )}
 
           {/* Password */}
           <div className="relative">

@@ -7,16 +7,38 @@ const SignIn = () => {
   const [formData, setFormData] = useState({ email: "", password: "" });
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
+  const [error, setError] = useState('');
 
   const handleChange = (e) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
+    setError('');
     setLoading(true);
-    // Simulate loading
-    setTimeout(() => setLoading(false), 1500);
+    try {
+      const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:5001';
+      const res = await fetch(`${apiBase}/api/signin`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ email: formData.email, password: formData.password })
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data && data.message ? data.message : 'Invalid credentials or Password');
+        setLoading(false);
+        return;
+      }
+      // Success — redirect to home or dashboard
+      setLoading(false);
+      window.location.href = '/';
+    } catch (err) {
+      console.error('Signin error', err);
+      setError('Network error. Please try again.');
+      setLoading(false);
+    }
   };
 
   const handleGoogleSignIn = () => {
@@ -55,7 +77,7 @@ const SignIn = () => {
         <p className="text-gray-600 text-center mt-1 text-sm">
           Sign in to continue ordering your favorites 🚀
         </p>
-
+        {error && <p className="text-red-500 text-center text-sm mt-2">{error}</p>}
         <form className="mt-6 space-y-4" onSubmit={handleSubmit}>
           {/* Email */}
           <div className="relative">
